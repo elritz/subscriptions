@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package services;
+
+service Managing {
+  // Read operations
+  rpc ManagerSendPushNotification(PushNotificationRequest) returns (PushNotificationResponse) {};
+}
+
+service Profiling {
+  // Read operations
+  rpc ProfilingPost(PostRequest) returns (Post) {};
+  
+  // Write operations
+}
+
+service Messaging {
+  // Read operations
+  rpc CreateFriendRequestMessage(PostRequest) returns (Post) {};
+
+  // Write operations
+}
+
+
+message PushNotificationRequest {
+  repeated PushNotificationProfile profiles = 1; 
+}
+
+message PushNotificationProfile {
+  string profileid = 1;
+  string message = 2;
+}
+
+
+message PushNotificationResponse {
+  bool success = 1;
+}
+
+message Post {
+  int32 id = 1;
+  string createdAt = 2;
+  string updatedAt = 3;
+  string title = 4;
+  string content = 5;
+  bool published = 6;
+}
+
+message PostRequest {
+  int32 id = 1;
+}
