@@ -1,55 +1,106 @@
-import fs from "fs";
-import http2 from "http2";
-import { createHandler } from "graphql-sse";
-import { GraphQLSchema, GraphQLObjectType, GraphQLString } from "graphql";
+import { ApolloServer } from "@apollo/server";
+import { expressMiddleware } from "@apollo/server/express4";
+import { ApolloServerPluginDrainHttpServer } from "@apollo/server/plugin/drainHttpServer";
+import { makeExecutableSchema } from "@graphql-tools/schema";
+import bodyParser from "body-parser";
+import cors from "cors";
+import express from "express";
+import { PubSub } from "graphql-subscriptions";
+import { useServer } from "graphql-ws/lib/use/ws";
+import { createServer } from "http";
+import { WebSocketServer } from "ws";
 
-const schema = new GraphQLSchema({
-  query: new GraphQLObjectType({
-    name: "Query",
-    fields: {
-      hello: {
-        type: GraphQLString,
-        resolve: () => "world",
-      },
+const PORT = 5004;
+const pubsub = new PubSub();
+
+// Schema definition
+const typeDefs = `#graphql
+  type Query {
+    currentNumber: Int
+  }
+  type Subscription {
+    numberIncremented: Int
+  }
+`;
+
+// Resolver map
+const resolvers = {
+  Query: {
+    currentNumber() {
+      return currentNumber;
     },
-  }),
-  subscription: new GraphQLObjectType({
-    name: "Subscription",
-    fields: {
-      greetings: {
-        type: GraphQLString,
-        subscribe: async function* () {
-          for (const hi of ["Hi", "Bonjour", "Hola", "Ciao", "Zdravo"]) {
-            yield { greetings: hi };
-          }
+  },
+  Subscription: {
+    numberIncremented: {
+      subscribe: () => pubsub.asyncIterator(["NUMBER_INCREMENTED"]),
+    },
+  },
+};
+
+const mainServer = (async () => {
+  // Create schema, which will be used separately by ApolloServer and
+  // the WebSocket server.
+  const schema = makeExecutableSchema({ typeDefs, resolvers });
+
+  // Create an Express app and HTTP server; we will attach the WebSocket
+  // server and the ApolloServer to this HTTP server.
+  const app = express();
+  const httpServer = createServer(app);
+
+  // Set up WebSocket server.
+  const wsServer = new WebSocketServer({
+    server: httpServer,
+    path: "/graphql",
+  });
+  const serverCleanup = useServer({ schema }, wsServer);
+
+  // Set up ApolloServer.
+  const server = new ApolloServer({
+    schema,
+    plugins: [
+      // Proper shutdown for the HTTP server.
+      ApolloServerPluginDrainHttpServer({ httpServer }),
+
+      // Proper shutdown for the WebSocket server.
+      {
+        async serverWillStart() {
+          return {
+            async drainServer() {
+              await serverCleanup.dispose();
+            },
+          };
         },
       },
-    },
-  }),
-});
+    ],
+  });
 
-// Create the GraphQL over SSE handler
-const handler = createHandler({
-  schema, // from the previous step
-});
+  await server.start();
 
-// Create a HTTP/2 server using the handler on `/graphql/stream`
-const mainServer = (async function () {
-  const server = http2.createSecureServer(
-    {
-      key: fs.readFileSync("./localhost-privkey.pem"),
-      cert: fs.readFileSync("./localhost-cert.pem"),
-    },
-    (req, res) => {
-      if (req.url.startsWith("/graphql/stream")) return handler(req, res);
-      return res.writeHead(404).end();
-    }
+  app.use(
+    "/graphql",
+    cors<cors.CorsRequest>(),
+    bodyParser.json(),
+    expressMiddleware(server)
   );
 
-  server.listen(process.env.PORT);
-  console.log(
-    `🚀 Server ready at https://localhost:${process.env.PORT}/graphql/stream`
-  );
+  // Now that our HTTP server is fully set up, actually listen.
+  httpServer.listen(PORT, () => {
+    console.log(`🚀 Query endpoint ready at http://localhost:${PORT}/graphql`);
+    console.log(
+      `🚀 Subscription endpoint ready at ws://localhost:${PORT}/graphql`
+    );
+  });
 })();
 
 export default mainServer;
+
+// In the background, increment a number every second and notify subscribers when it changes.
+let currentNumber = 0;
+function incrementNumber() {
+  currentNumber++;
+  pubsub.publish("NUMBER_INCREMENTED", { numberIncremented: currentNumber });
+  setTimeout(incrementNumber, 3000);
+}
+
+// Start incrementing
+incrementNumber();

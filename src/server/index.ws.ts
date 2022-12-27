@@ -1,14 +1,15 @@
 import { ApolloServer } from "@apollo/server";
 import { expressMiddleware } from "@apollo/server/express4";
 import { ApolloServerPluginDrainHttpServer } from "@apollo/server/plugin/drainHttpServer";
-import express from "express";
-import { createServer } from "http";
 import { makeExecutableSchema } from "@graphql-tools/schema";
-import { WebSocketServer } from "ws";
-import { useServer } from "graphql-ws/lib/use/ws";
-import { PubSub } from "graphql-subscriptions";
 import bodyParser from "body-parser";
 import cors from "cors";
+import express from "express";
+import { PubSub } from "graphql-subscriptions";
+import { useServer } from "graphql-ws/lib/use/ws";
+import { createServer } from "http";
+import { WebSocketServer } from "ws";
+
 const PORT = 5004;
 const pubsub = new PubSub();
 
@@ -98,7 +99,7 @@ let currentNumber = 0;
 function incrementNumber() {
   currentNumber++;
   pubsub.publish("NUMBER_INCREMENTED", { numberIncremented: currentNumber });
-  setTimeout(incrementNumber, 1000);
+  setTimeout(incrementNumber, 3000);
 }
 
 // Start incrementing

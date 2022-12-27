@@ -18,6 +18,7 @@ export interface ProtoGrpcType {
     Profiling: SubtypeConstructor<typeof grpc.Client, _services_ProfilingClient> & { service: _services_ProfilingDefinition }
     PushNotificationProfile: MessageTypeDefinition
     PushNotificationRequest: MessageTypeDefinition
+    PushNotificationRequests: MessageTypeDefinition
     PushNotificationResponse: MessageTypeDefinition
   }
 }

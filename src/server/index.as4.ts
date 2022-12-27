@@ -1,40 +1,60 @@
 import { ApolloServer } from "@apollo/server";
 import { expressMiddleware } from "@apollo/server/express4";
 import { ApolloServerPluginDrainHttpServer } from "@apollo/server/plugin/drainHttpServer";
-import { createServer } from "http";
-import express from "express";
 import { makeExecutableSchema } from "@graphql-tools/schema";
-import { WebSocketServer } from "ws";
-import { useServer } from "graphql-ws/lib/use/ws";
 import bodyParser from "body-parser";
 import cors from "cors";
+import express from "express";
+import { PubSub } from "graphql-subscriptions";
+import { useServer } from "graphql-ws/lib/use/ws";
+import { createServer } from "http";
+import { WebSocketServer } from "ws";
 
-import { resolvers } from "../resolvers";
-import { typeDefs } from "../typedefs";
+const PORT = 5004;
+const pubsub = new PubSub();
+
+// Schema definition
+const typeDefs = `#graphql
+  type Query {
+    currentNumber: Int
+  }
+  type Subscription {
+    numberIncremented: Int
+  }
+`;
+
+// Resolver map
+const resolvers = {
+  Query: {
+    currentNumber() {
+      return currentNumber;
+    },
+  },
+  Subscription: {
+    numberIncremented: {
+      subscribe: () => pubsub.asyncIterator(["NUMBER_INCREMENTED"]),
+    },
+  },
+};
+
 const mainServer = (async () => {
-  const app = express();
-  const port = process.env.SUBSCRIPTIONS_SERVICE_PORT;
-
-  /**
-   * Expose GraphQL endpoint via WebSockets (for subscription operations only)
-   */
-
+  // Create schema, which will be used separately by ApolloServer and
+  // the WebSocket server.
   const schema = makeExecutableSchema({ typeDefs, resolvers });
 
-  const httpServer = createServer(function weServeSocketsOnly(_, res) {
-    res.writeHead(404);
-    res.end();
-  });
+  // Create an Express app and HTTP server; we will attach the WebSocket
+  // server and the ApolloServer to this HTTP server.
+  const app = express();
+  const httpServer = createServer(app);
 
+  // Set up WebSocket server.
   const wsServer = new WebSocketServer({
-    // This is the `httpServer` we created in a previous step.
     server: httpServer,
-    // Pass a different path here if app.use
-    // serves expressMiddleware at a different path
     path: "/graphql",
   });
   const serverCleanup = useServer({ schema }, wsServer);
 
+  // Set up ApolloServer.
   const server = new ApolloServer({
     schema,
     plugins: [
@@ -55,14 +75,15 @@ const mainServer = (async () => {
   });
 
   await server.start();
+
   app.use(
     "/graphql",
     cors<cors.CorsRequest>(),
     bodyParser.json(),
     expressMiddleware(server)
   );
-  const PORT = 4000;
-  // Now that our HTTP server is fully set up, we can listen to it.
+
+  // Now that our HTTP server is fully set up, actually listen.
   httpServer.listen(PORT, () => {
     console.log(`🚀 Query endpoint ready at http://localhost:${PORT}/graphql`);
     console.log(
@@ -72,3 +93,14 @@ const mainServer = (async () => {
 })();
 
 export default mainServer;
+
+// In the background, increment a number every second and notify subscribers when it changes.
+let currentNumber = 0;
+function incrementNumber() {
+  currentNumber++;
+  pubsub.publish("NUMBER_INCREMENTED", { numberIncremented: currentNumber });
+  setTimeout(incrementNumber, 3000);
+}
+
+// Start incrementing
+incrementNumber();
