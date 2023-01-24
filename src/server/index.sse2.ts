@@ -50,12 +50,6 @@ const mainServer = (async function () {
       cert: fs.readFileSync("./localhost-cert.pem"),
     },
     (req, res) => {
-      if (req.url.startsWith("/graphql/stream")) {
-        console.log(req.url);
-        return handler(req, res);
-      } else {
-        res.writeHead(404).end();
-      }
       return handler(req, res);
     }
   );
